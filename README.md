@@ -1,6 +1,16 @@
 # 🎨 SyncDraw — Real-Time Collaborative Drawing Canvas
 
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/bommanaboinayaswanth/collaborative-canvas)
+
 A high-performance, multi-user real-time drawing whiteboard built from scratch with **Vanilla JavaScript/HTML5 Canvas** on the frontend and **Node.js + Socket.IO** on the backend. Zero frontend frameworks (no React/Vue), zero external canvas drawing libraries (no Fabric.js/Konva).
+
+---
+
+## 🌐 Live Deployed Demo Link
+
+* **Direct Public Live Demo**: **[https://8d55df35b40937.lhr.life](https://8d55df35b40937.lhr.life)**
+* **1-Click Cloud Deploy (Render)**: **[Deploy to Render](https://render.com/deploy?repo=https://github.com/bommanaboinayaswanth/collaborative-canvas)**
+* **GitHub Repository**: **[https://github.com/bommanaboinayaswanth/collaborative-canvas](https://github.com/bommanaboinayaswanth/collaborative-canvas)**
 
 ---
 
