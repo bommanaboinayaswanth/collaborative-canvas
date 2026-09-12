@@ -197,7 +197,7 @@ npm test
 
 ---
 
-##  Known Limitations & Design Trade-offs
+# Known Limitations & Design Trade-offs
 
 1. **Session History Depth**: Canvas history is replayed from the operation log upon undo/redo. For ultra-long sessions (>5,000 operations), this is optimized by introducing offscreen raster checkpoint snapshots every 50 operations (documented in [ARCHITECTURE.md](ARCHITECTURE.md)).
 2. **Text Tool**: While geometric shapes (rectangles, circles, lines, arrows) are fully supported, rich multi-line editable text input boxes were omitted to prioritize core 2D vector path manipulation and real-time synchronization.
@@ -205,7 +205,7 @@ npm test
 
 ---
 
-## ⏱️ Time Spent on the Project
+# Time Spent on the Project
 
 | Milestone | Time Spent |
 |---|---|
@@ -220,7 +220,7 @@ npm test
 
 ---
 
-##  Interview Preparation
+# Interview Preparation
 
 See [INTERVIEW_GUIDE.md](INTERVIEW_GUIDE.md) for:
 - 5-minute live demo script with exact timestamps
