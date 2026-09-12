@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>SyncDraw — Real-Time Collaborative Canvas</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app-container">
+    <!-- TOP NAVIGATION BAR -->
+    <header class="top-bar">
+      <!-- Left: Logo & Room selector -->
+      <div class="brand-section">
+        <div class="brand-logo">
+          <span class="status-dot connected" id="connection-status-dot" title="Connection Status"></span>
+          <span>SyncDraw</span>
+        </div>
+
+        <div class="room-badge">
+          <span id="current-room-name">#main</span>
+          <button class="btn-icon-tiny" id="btn-share-room" title="Copy room link">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+              <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+            </svg>
+          </button>
+        </div>
+
+        <div class="room-nav">
+          <input type="text" id="room-name-input" class="room-input" placeholder="Room ID..." maxlength="20">
+          <button id="btn-join-room" class="btn-small">Join</button>
+        </div>
+      </div>
+
+      <!-- Center: Online presence roster -->
+      <div class="center-section">
+        <div class="online-roster">
+          <span class="user-count-badge" id="user-count">1 online</span>
+          <div class="avatars-container" id="user-avatars">
+            <!-- Dynamically populated user pills -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: Performance HUD & Profile -->
+      <div class="right-section">
+        <div class="metrics-group">
+          <span class="metric-tag fps-high" id="fps-indicator" title="Frame Rate">60 FPS</span>
+          <span class="metric-tag ping-fast" id="latency-indicator" title="Network Roundtrip Latency">-- ms</span>
+          <span class="metric-tag" id="ops-count" title="Active Operations in Room">0 strokes</span>
+        </div>
+
+        <button class="profile-trigger" id="btn-edit-profile" title="Edit Profile">
+          <span class="user-color-dot" id="my-profile-dot" style="background-color: #3b82f6;"></span>
+          <span id="my-profile-name">Artist</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- LEFT FLOATING TOOLBAR -->
+    <nav class="floating-toolbar" aria-label="Drawing Tools">
+      <div class="tool-group">
+        <button class="tool-btn active" data-tool="brush" data-tooltip="Brush (B)">
+          <svg viewBox="0 0 24 24">
+            <path d="M7 14c-1.66 0-3 1.34-3 3 0 1.31-1.16 2-2 2 .92 1.22 2.49 2 4 2 2.21 0 4-1.79 4-4 0-1.66-1.34-3-3-3zm13.71-9.37l-1.34-1.34a.996.996 0 0 0-1.41 0L9 12.25 11.75 15l8.96-8.96c.39-.39.39-1.02 0-1.41z"/>
+          </svg>
+        </button>
+
+        <button class="tool-btn" data-tool="eraser" data-tooltip="Eraser (E)">
+          <svg viewBox="0 0 24 24">
+            <path d="M15.14 3c-.51 0-1.02.2-1.41.59L2.59 14.73c-.78.78-.78 2.05 0 2.83L6.44 21.4c.78.78 2.05.78 2.83 0l11.14-11.14c.79-.79.79-2.05 0-2.84l-3.86-3.83c-.39-.39-.9-.59-1.41-.59zm.7 2.12l3.14 3.14-2.83 2.83-3.14-3.14 2.83-2.83z"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="tool-group">
+        <button class="tool-btn" data-tool="line" data-tooltip="Line (L)">
+          <svg viewBox="0 0 24 24">
+            <path d="M3.5 20.5l17-17 1.4 1.4-17 17z"/>
+          </svg>
+        </button>
+
+        <button class="tool-btn" data-tool="arrow" data-tooltip="Arrow (A)">
+          <svg viewBox="0 0 24 24">
+            <path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z"/>
+          </svg>
+        </button>
+
+        <button class="tool-btn" data-tool="rectangle" data-tooltip="Rectangle (R)">
+          <svg viewBox="0 0 24 24">
+            <path d="M3 3v18h18V3H3zm16 16H5V5h14v14z"/>
+          </svg>
+        </button>
+
+        <button class="tool-btn" data-tool="circle" data-tooltip="Circle (C)">
+          <svg viewBox="0 0 24 24">
+            <path d="M12 2C6.47 2 2 6.47 2 12s4.47 10 10 10 10-4.47 10-10S17.53 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/>
+          </svg>
+        </button>
+      </div>
+    </nav>
+
+    <!-- BOTTOM PROPERTIES & ACTIONS DOCK -->
+    <footer class="bottom-properties-dock">
+      <!-- Color Palette -->
+      <div class="palette-group">
+        <div class="color-swatch active" data-color="#000000" style="background: #000000;"></div>
+        <div class="color-swatch" data-color="#ef4444" style="background: #ef4444;"></div>
+        <div class="color-swatch" data-color="#f97316" style="background: #f97316;"></div>
+        <div class="color-swatch" data-color="#eab308" style="background: #eab308;"></div>
+        <div class="color-swatch" data-color="#10b981" style="background: #10b981;"></div>
+        <div class="color-swatch" data-color="#3b82f6" style="background: #3b82f6;"></div>
+        <div class="color-swatch" data-color="#8b5cf6" style="background: #8b5cf6;"></div>
+        <div class="color-swatch" data-color="#ec4899" style="background: #ec4899;"></div>
+        
+        <div class="custom-color-wrapper" title="Custom color picker">
+          <input type="color" id="color-picker" value="#000000">
+        </div>
+      </div>
+
+      <div class="divider" style="width: 1px; height: 24px;"></div>
+
+      <!-- Stroke Width Slider -->
+      <div class="slider-group">
+        <label for="stroke-width">Size</label>
+        <input type="range" id="stroke-width" class="width-slider" min="1" max="48" value="4">
+        <span class="width-val-badge" id="width-value">4px</span>
+      </div>
+
+      <div class="divider" style="width: 1px; height: 24px;"></div>
+
+      <!-- Undo / Redo & Undo Mode -->
+      <div class="actions-group">
+        <button class="action-btn" id="btn-undo" title="Undo (Ctrl+Z)">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+            <path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"/>
+          </svg>
+          Undo
+        </button>
+
+        <button class="action-btn" id="btn-redo" title="Redo (Ctrl+Y / Ctrl+Shift+Z)">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+            <path d="M18.4 10.6C16.55 8.99 14.15 8 11.5 8c-4.65 0-8.58 3.03-9.96 7.22L3.9 16c1.05-3.19 4.05-5.5 7.6-5.5 1.95 0 3.73.72 5.12 1.88L13 16h9V7l-3.6 3.6z"/>
+          </svg>
+          Redo
+        </button>
+
+        <select id="undo-mode-select" class="undo-mode-select" title="Undo Scope Mode">
+          <option value="global" selected>Global Undo</option>
+          <option value="user">My Actions Only</option>
+        </select>
+      </div>
+
+      <div class="divider" style="width: 1px; height: 24px;"></div>
+
+      <!-- Canvas Management -->
+      <div class="actions-group">
+        <button class="action-btn danger" id="btn-clear" title="Clear Canvas for everyone">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+            <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+          </svg>
+          Clear
+        </button>
+
+        <button class="action-btn" id="btn-export" title="Export as PNG">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+            <path d="M19 12v7H5v-7H3v7c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2v-7h-2zm-6 .67l2.59-2.58L17 11.5l-5 5-5-5 1.41-1.41L11 12.67V3h2v9.67z"/>
+          </svg>
+          Export
+        </button>
+      </div>
+    </footer>
+
+    <!-- CANVAS ENGINE CONTAINER -->
+    <main id="canvas-container">
+      <!-- Base & Active Canvas elements injected dynamically by canvas.js -->
+    </main>
+
+    <!-- PEER CURSORS OVERLAY -->
+    <div id="cursor-overlay"></div>
+
+    <!-- PROFILE MODAL -->
+    <div id="profile-modal" class="modal-backdrop hidden">
+      <div class="modal-card">
+        <h3>Customize Profile</h3>
+        <div class="form-group">
+          <label for="profile-username">Display Name</label>
+          <input type="text" id="profile-username" class="form-control" maxlength="24" placeholder="Enter name...">
+        </div>
+        <div class="form-group">
+          <label for="profile-color">Your Presence Color</label>
+          <input type="color" id="profile-color" class="form-control" style="height: 38px; padding: 2px;">
+        </div>
+        <div class="modal-buttons">
+          <button id="btn-close-profile" class="btn-secondary">Cancel</button>
+          <button id="btn-save-profile" class="btn-primary">Save Changes</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- TOAST ALERTS -->
+    <div id="toast-container"></div>
+  </div>
+
+  <!-- Socket.IO client library (automatically served by Socket.IO) -->
+  <script src="/socket.io/socket.io.js"></script>
+  <!-- Main Application ES6 Module -->
+  <script type="module" src="main.js"></script>
+</body>
+</html>
