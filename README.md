@@ -1,22 +1,22 @@
-# 🎨 SyncDraw — Real-Time Collaborative Drawing Canvas
+# SyncDraw — Real-Time Collaborative Drawing Canvas
 A high-performance, multi-user real-time drawing whiteboard built from scratch with **Vanilla JavaScript/HTML5 Canvas** on the frontend and **Node.js + Socket.IO** on the backend. Zero frontend frameworks (no React/Vue), zero external canvas drawing libraries (no Fabric.js/Konva).
 
 ---
 
-## 🌐 Live Deployed Demo Link
+# Live Deployed Demo Link
 
 * **Direct Public Live Demo**: **(https://collaborative-canvas-9wu5.onrender.com)**
 * **GitHub Repository**: **[https://github.com/bommanaboinayaswanth/collaborative-canvas](https://github.com/bommanaboinayaswanth/collaborative-canvas)**
 
 ---
 
-## ⚡ Quick Start (Local Run)
+# Quick Start (Local Run)
 
-### Prerequisites
+# Prerequisites
 - [Node.js](https://nodejs.org/) (v18+ recommended, v24 supported)
 - `npm` (v9+)
 
-### 1. Install & Run
+# 1. Install & Run
 ```bash
 # Clone or enter the repository
 cd collaborative-canvas
@@ -30,33 +30,33 @@ npm start
 
 Open your browser to: **`http://localhost:3000`**
 
-### 2. Development Mode (Auto-Reload)
+# 2. Development Mode (Auto-Reload)
 ```bash
 npm run dev
 ```
 
-### 3. Run Automated Multi-User Test Suite (18 Scenarios)
+# 3. Run Automated Multi-User Test Suite (18 Scenarios)
 ```bash
 npm test
 ```
 
 ---
 
-## 🚀 1-Click Cloud Deployment
+# 1-Click Cloud Deployment
 
 This repository is pre-configured for instant zero-config cloud deployment:
 
-### Option A: Render.com (Recommended Free Hosting)
+# Option A: Render.com (Recommended Free Hosting)
 1. Push your repository to GitHub.
 2. Log into [Render.com](https://render.com/) and click **New +** -> **Blueprint**.
 3. Select this repository. Render will automatically read `render.yaml` and deploy your app.
 4. Your live URL will be active in ~2 minutes! (e.g., `https://collaborative-canvas-xxxx.onrender.com`).
 
-### Option B: Railway.app
+# Option B: Railway.app
 1. Go to [Railway.app](https://railway.app/) -> **New Project** -> **Deploy from GitHub repo**.
 2. Railway detects the `Dockerfile` or `package.json` automatically and provisions your app with an SSL domain.
 
-### Option C: Docker Container
+# Option C: Docker Container
 ```bash
 # Build Docker image
 docker build -t syncdraw .
@@ -68,7 +68,7 @@ Visit `http://localhost:3000`.
 
 ---
 
-## 👥 How to Test with Multiple Users
+# How to Test with Multiple Users
 
 1. Open **`http://localhost:3000`** in Window 1 (User A).
 2. Open **`http://localhost:3000`** in Window 2 or an Incognito Window / Mobile browser (User B).
@@ -86,7 +86,7 @@ Visit `http://localhost:3000`.
 
 ---
 
-## 🛠️ System Architecture & Tech Stack
+# System Architecture & Tech Stack
 
 ```
 collaborative-canvas/
@@ -118,7 +118,7 @@ collaborative-canvas/
 
 ---
 
-## ✨ Features Checklist
+# Features Checklist
 
 - [x] **Dual-Canvas Layer Architecture**: Dedicated Base Canvas (committed operations) + Active Canvas (in-flight strokes & shape previews) to eliminate full-canvas redrawing during mouse movement.
 - [x] **Path Smoothing**: Quadratic bezier curves with midpoint interpolation (`(p1 + p2)/2`) eliminate jagged lines.
@@ -137,7 +137,7 @@ collaborative-canvas/
 
 ---
 
-## 🧪 Automated Test Suite (18 Scenarios)
+# Automated Test Suite (18 Scenarios)
 
 Run:
 ```bash
@@ -147,7 +147,7 @@ npm test
 **Test Verification Matrix**:
 ```text
 ═══════════════════════════════════════════════════════════
- 🚀 RUNNING 100% COLLABORATIVE CANVAS INTEGRATION TEST SUITE
+ # RUNNING 100% COLLABORATIVE CANVAS INTEGRATION TEST SUITE
 ═══════════════════════════════════════════════════════════
 
 --- Phase 1: Server Health & Connectivity ---
@@ -191,13 +191,13 @@ npm test
   ✅ PASS: 18. Disconnect broadcast received and user presence updated
 
 ═══════════════════════════════════════════════════════════
- 🏆 TEST RESULTS: 22 PASSED, 0 FAILED
+  TEST RESULTS: 22 PASSED, 0 FAILED
 ═══════════════════════════════════════════════════════════
 ```
 
 ---
 
-## ⚠️ Known Limitations & Design Trade-offs
+##  Known Limitations & Design Trade-offs
 
 1. **Session History Depth**: Canvas history is replayed from the operation log upon undo/redo. For ultra-long sessions (>5,000 operations), this is optimized by introducing offscreen raster checkpoint snapshots every 50 operations (documented in [ARCHITECTURE.md](ARCHITECTURE.md)).
 2. **Text Tool**: While geometric shapes (rectangles, circles, lines, arrows) are fully supported, rich multi-line editable text input boxes were omitted to prioritize core 2D vector path manipulation and real-time synchronization.
@@ -220,7 +220,7 @@ npm test
 
 ---
 
-## 🎙️ Interview Preparation
+##  Interview Preparation
 
 See [INTERVIEW_GUIDE.md](INTERVIEW_GUIDE.md) for:
 - 5-minute live demo script with exact timestamps
