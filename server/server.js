@@ -4,6 +4,11 @@
  * Express + Socket.IO Server for Real-Time Collaborative Canvas.
  * Handles client connections, room isolation, real-time stroke streaming,
  * authoritative global undo/redo, presence, and ping-pong latency.
+ * 
+ * Hardened with:
+ * - Robust payload guard clauses and crash prevention
+ * - Safe handling of abrupt client disconnections
+ * - Graceful shutdown
  */
 
 const express = require('express');
@@ -41,106 +46,123 @@ app.get('/api/health', (req, res) => {
 
 // Socket.io connection handling
 io.on('connection', (socket) => {
-  console.log(`[Socket] Connected: ${socket.id}`);
-
   /**
    * Client joins a specific room
    */
   socket.on('room:join', (payload = {}) => {
-    const roomId = (payload.roomId || 'main').trim().toLowerCase();
-    const { room, user } = roomManager.addUser(roomId, socket.id, {
-      userName: payload.userName,
-      userColor: payload.userColor,
-      userId: payload.userId
-    });
+    try {
+      const roomId = String(payload.roomId || 'main').trim().toLowerCase().slice(0, 32) || 'main';
+      const { room, user } = roomManager.addUser(roomId, socket.id, {
+        userName: payload.userName,
+        userColor: payload.userColor,
+        userId: payload.userId
+      });
 
-    socket.join(room.id);
-    console.log(`[Room] ${user.userName} (${user.userId}) joined room: ${room.id}`);
+      socket.join(room.id);
 
-    // 1. Send initialization payload to the joining client
-    const snapshot = room.drawingState.getSnapshot();
-    const activeUsers = roomManager.getRoomUsers(room.id);
+      // 1. Send initialization snapshot to joining client
+      const snapshot = room.drawingState.getSnapshot();
+      const activeUsers = roomManager.getRoomUsers(room.id);
 
-    socket.emit('init:state', {
-      user,
-      room: { id: room.id },
-      snapshot,
-      users: activeUsers
-    });
+      socket.emit('init:state', {
+        user,
+        room: { id: room.id },
+        snapshot,
+        users: activeUsers
+      });
 
-    // 2. Notify other clients in the room about the new user
-    socket.to(room.id).emit('user:joined', {
-      user: {
-        userId: user.userId,
-        userName: user.userName,
-        userColor: user.userColor,
-        cursor: user.cursor
-      },
-      users: activeUsers
-    });
+      // 2. Notify other clients in the room
+      socket.to(room.id).emit('user:joined', {
+        user: {
+          userId: user.userId,
+          userName: user.userName,
+          userColor: user.userColor,
+          cursor: user.cursor
+        },
+        users: activeUsers
+      });
+    } catch (err) {
+      console.error('[Socket] room:join error:', err.message);
+    }
   });
 
   /**
    * Real-time drawing: Stroke Start
    */
   socket.on('stroke:start', (strokeData) => {
-    const user = roomManager.getUser(socket.id);
-    if (!user) return;
-    const roomId = roomManager.socketToRoom.get(socket.id);
-    const drawingState = roomManager.getDrawingState(roomId);
-    if (!drawingState) return;
+    try {
+      if (!strokeData || !strokeData.opId) return;
 
-    // Attach verified user identity
-    strokeData.userId = user.userId;
-    strokeData.userName = user.userName;
-    strokeData.userColor = user.userColor;
+      const user = roomManager.getUser(socket.id);
+      if (!user) return;
+      const roomId = roomManager.socketToRoom.get(socket.id);
+      const drawingState = roomManager.getDrawingState(roomId);
+      if (!drawingState) return;
 
-    drawingState.startStroke(user.userId, strokeData);
+      strokeData.userId = user.userId;
+      strokeData.userName = user.userName;
+      strokeData.userColor = user.userColor;
 
-    // Stream immediately to all peers in the room
-    socket.to(roomId).emit('stroke:start', strokeData);
+      const activeStroke = drawingState.startStroke(user.userId, strokeData);
+      if (!activeStroke) return;
+
+      socket.to(roomId).emit('stroke:start', activeStroke);
+    } catch (err) {
+      console.error('[Socket] stroke:start error:', err.message);
+    }
   });
 
   /**
    * Real-time drawing: Stroke Points streaming
    */
   socket.on('stroke:points', (data) => {
-    const roomId = roomManager.socketToRoom.get(socket.id);
-    if (!roomId) return;
-    const drawingState = roomManager.getDrawingState(roomId);
-    if (!drawingState) return;
+    try {
+      if (!data || !data.opId || !data.points) return;
 
-    drawingState.appendPoints(data.opId, data.points);
+      const roomId = roomManager.socketToRoom.get(socket.id);
+      if (!roomId) return;
+      const drawingState = roomManager.getDrawingState(roomId);
+      if (!drawingState) return;
 
-    // Stream chunk to all peers
-    socket.to(roomId).emit('stroke:points', {
-      opId: data.opId,
-      points: data.points
-    });
+      const stroke = drawingState.appendPoints(data.opId, data.points);
+      if (!stroke) return;
+
+      socket.to(roomId).emit('stroke:points', {
+        opId: data.opId,
+        points: data.points
+      });
+    } catch (err) {
+      console.error('[Socket] stroke:points error:', err.message);
+    }
   });
 
   /**
    * Real-time drawing: Stroke End (Commit operation)
    */
   socket.on('stroke:end', (finalData) => {
-    const user = roomManager.getUser(socket.id);
-    if (!user) return;
-    const roomId = roomManager.socketToRoom.get(socket.id);
-    const drawingState = roomManager.getDrawingState(roomId);
-    if (!drawingState) return;
+    try {
+      if (!finalData || !finalData.opId) return;
 
-    finalData.userId = user.userId;
-    finalData.userName = user.userName;
-    finalData.userColor = user.userColor;
+      const user = roomManager.getUser(socket.id);
+      if (!user) return;
+      const roomId = roomManager.socketToRoom.get(socket.id);
+      const drawingState = roomManager.getDrawingState(roomId);
+      if (!drawingState) return;
 
-    const committedOp = drawingState.endStroke(finalData.opId, finalData);
+      finalData.userId = user.userId;
+      finalData.userName = user.userName;
+      finalData.userColor = user.userColor;
 
-    if (committedOp) {
-      // Broadcast committed operation with sequence number to all clients (including sender)
-      io.in(roomId).emit('stroke:committed', {
-        operation: committedOp,
-        sequenceNumber: drawingState.sequenceNumber
-      });
+      const committedOp = drawingState.endStroke(finalData.opId, finalData);
+
+      if (committedOp) {
+        io.in(roomId).emit('stroke:committed', {
+          operation: committedOp,
+          sequenceNumber: drawingState.sequenceNumber
+        });
+      }
+    } catch (err) {
+      console.error('[Socket] stroke:end error:', err.message);
     }
   });
 
@@ -148,66 +170,84 @@ io.on('connection', (socket) => {
    * Real-time drawing: Cancel stroke
    */
   socket.on('stroke:cancel', (data) => {
-    const roomId = roomManager.socketToRoom.get(socket.id);
-    if (!roomId) return;
-    const drawingState = roomManager.getDrawingState(roomId);
-    if (!drawingState) return;
+    try {
+      if (!data || !data.opId) return;
+      const roomId = roomManager.socketToRoom.get(socket.id);
+      if (!roomId) return;
+      const drawingState = roomManager.getDrawingState(roomId);
+      if (!drawingState) return;
 
-    drawingState.cancelStroke(data.opId);
-    socket.to(roomId).emit('stroke:cancel', { opId: data.opId });
+      drawingState.cancelStroke(data.opId);
+      socket.to(roomId).emit('stroke:cancel', { opId: data.opId });
+    } catch (err) {
+      console.error('[Socket] stroke:cancel error:', err.message);
+    }
   });
 
   /**
    * Live Peer Cursor movement
    */
   socket.on('cursor:move', (cursorData) => {
-    const user = roomManager.updateCursor(socket.id, cursorData);
-    if (!user) return;
-    const roomId = roomManager.socketToRoom.get(socket.id);
-    if (!roomId) return;
+    try {
+      if (!cursorData) return;
+      const user = roomManager.updateCursor(socket.id, cursorData);
+      if (!user) return;
+      const roomId = roomManager.socketToRoom.get(socket.id);
+      if (!roomId) return;
 
-    socket.to(roomId).emit('cursor:update', {
-      userId: user.userId,
-      userName: user.userName,
-      userColor: user.userColor,
-      cursor: user.cursor
-    });
+      socket.to(roomId).emit('cursor:update', {
+        userId: user.userId,
+        userName: user.userName,
+        userColor: user.userColor,
+        cursor: user.cursor
+      });
+    } catch (err) {
+      console.error('[Socket] cursor:move error:', err.message);
+    }
   });
 
   /**
    * Cursor leaving canvas
    */
   socket.on('cursor:leave', () => {
-    const user = roomManager.getUser(socket.id);
-    if (!user) return;
-    const roomId = roomManager.socketToRoom.get(socket.id);
-    if (!roomId) return;
+    try {
+      const user = roomManager.getUser(socket.id);
+      if (!user) return;
+      const roomId = roomManager.socketToRoom.get(socket.id);
+      if (!roomId) return;
 
-    user.cursor.x = -1;
-    user.cursor.y = -1;
-    socket.to(roomId).emit('cursor:leave', { userId: user.userId });
+      user.cursor.x = -1;
+      user.cursor.y = -1;
+      socket.to(roomId).emit('cursor:leave', { userId: user.userId });
+    } catch (err) {
+      console.error('[Socket] cursor:leave error:', err.message);
+    }
   });
 
   /**
    * Global & User Undo
    */
   socket.on('history:undo', (payload = {}) => {
-    const user = roomManager.getUser(socket.id);
-    if (!user) return;
-    const roomId = roomManager.socketToRoom.get(socket.id);
-    const drawingState = roomManager.getDrawingState(roomId);
-    if (!drawingState) return;
+    try {
+      const user = roomManager.getUser(socket.id);
+      if (!user) return;
+      const roomId = roomManager.socketToRoom.get(socket.id);
+      const drawingState = roomManager.getDrawingState(roomId);
+      if (!drawingState) return;
 
-    const mode = payload.mode || 'global';
-    const result = drawingState.undo(user.userId, mode);
+      const mode = payload && payload.mode === 'user' ? 'user' : 'global';
+      const result = drawingState.undo(user.userId, mode);
 
-    if (result.success) {
-      io.in(roomId).emit('history:undone', {
-        opId: result.opId,
-        undoneBy: user.userName,
-        mode,
-        sequenceNumber: drawingState.sequenceNumber
-      });
+      if (result.success) {
+        io.in(roomId).emit('history:undone', {
+          opId: result.opId,
+          undoneBy: user.userName,
+          mode,
+          sequenceNumber: drawingState.sequenceNumber
+        });
+      }
+    } catch (err) {
+      console.error('[Socket] history:undo error:', err.message);
     }
   });
 
@@ -215,23 +255,27 @@ io.on('connection', (socket) => {
    * Global & User Redo
    */
   socket.on('history:redo', (payload = {}) => {
-    const user = roomManager.getUser(socket.id);
-    if (!user) return;
-    const roomId = roomManager.socketToRoom.get(socket.id);
-    const drawingState = roomManager.getDrawingState(roomId);
-    if (!drawingState) return;
+    try {
+      const user = roomManager.getUser(socket.id);
+      if (!user) return;
+      const roomId = roomManager.socketToRoom.get(socket.id);
+      const drawingState = roomManager.getDrawingState(roomId);
+      if (!drawingState) return;
 
-    const mode = payload.mode || 'global';
-    const result = drawingState.redo(user.userId, mode);
+      const mode = payload && payload.mode === 'user' ? 'user' : 'global';
+      const result = drawingState.redo(user.userId, mode);
 
-    if (result.success) {
-      io.in(roomId).emit('history:redone', {
-        opId: result.opId,
-        operation: result.operation,
-        redoneBy: user.userName,
-        mode,
-        sequenceNumber: drawingState.sequenceNumber
-      });
+      if (result.success) {
+        io.in(roomId).emit('history:redone', {
+          opId: result.opId,
+          operation: result.operation,
+          redoneBy: user.userName,
+          mode,
+          sequenceNumber: drawingState.sequenceNumber
+        });
+      }
+    } catch (err) {
+      console.error('[Socket] history:redo error:', err.message);
     }
   });
 
@@ -239,67 +283,86 @@ io.on('connection', (socket) => {
    * Clear canvas
    */
   socket.on('canvas:clear', () => {
-    const user = roomManager.getUser(socket.id);
-    if (!user) return;
-    const roomId = roomManager.socketToRoom.get(socket.id);
-    const drawingState = roomManager.getDrawingState(roomId);
-    if (!drawingState) return;
+    try {
+      const user = roomManager.getUser(socket.id);
+      if (!user) return;
+      const roomId = roomManager.socketToRoom.get(socket.id);
+      const drawingState = roomManager.getDrawingState(roomId);
+      if (!drawingState) return;
 
-    const clearOp = drawingState.clearCanvas(user.userId, user.userName);
+      const clearOp = drawingState.clearCanvas(user.userId, user.userName);
 
-    io.in(roomId).emit('canvas:cleared', {
-      operation: clearOp,
-      clearedBy: user.userName,
-      sequenceNumber: drawingState.sequenceNumber
-    });
+      io.in(roomId).emit('canvas:cleared', {
+        operation: clearOp,
+        clearedBy: user.userName,
+        sequenceNumber: drawingState.sequenceNumber
+      });
+    } catch (err) {
+      console.error('[Socket] canvas:clear error:', err.message);
+    }
   });
 
   /**
-   * Profile update (username or color)
+   * Profile update
    */
   socket.on('user:updateProfile', (data) => {
-    const user = roomManager.updateProfile(socket.id, data);
-    if (!user) return;
-    const roomId = roomManager.socketToRoom.get(socket.id);
-    if (!roomId) return;
+    try {
+      if (!data) return;
+      const user = roomManager.updateProfile(socket.id, data);
+      if (!user) return;
+      const roomId = roomManager.socketToRoom.get(socket.id);
+      if (!roomId) return;
 
-    io.in(roomId).emit('room:users', {
-      users: roomManager.getRoomUsers(roomId)
-    });
+      io.in(roomId).emit('room:users', {
+        users: roomManager.getRoomUsers(roomId)
+      });
+    } catch (err) {
+      console.error('[Socket] user:updateProfile error:', err.message);
+    }
   });
 
   /**
    * Latency Ping / Pong
    */
   socket.on('latency:ping', (data) => {
-    socket.emit('latency:pong', {
-      clientTime: data.clientTime,
-      serverTime: Date.now()
-    });
+    try {
+      if (!data || !data.clientTime) return;
+      socket.emit('latency:pong', {
+        clientTime: data.clientTime,
+        serverTime: Date.now()
+      });
+    } catch (err) {
+      console.error('[Socket] latency:ping error:', err.message);
+    }
   });
 
   /**
    * Disconnection cleanup
    */
   socket.on('disconnect', () => {
-    const { roomId, user } = roomManager.removeUser(socket.id);
-    if (user && roomId) {
-      console.log(`[Socket] Disconnected: ${user.userName} from room ${roomId}`);
-
-      // Broadcast user leave
-      socket.to(roomId).emit('user:left', {
-        userId: user.userId,
-        userName: user.userName,
-        users: roomManager.getRoomUsers(roomId)
-      });
+    try {
+      const { roomId, user } = roomManager.removeUser(socket.id);
+      if (user && roomId) {
+        socket.to(roomId).emit('user:left', {
+          userId: user.userId,
+          userName: user.userName,
+          users: roomManager.getRoomUsers(roomId)
+        });
+      }
+    } catch (err) {
+      console.error('[Socket] disconnect error:', err.message);
     }
   });
 });
 
 // Start Server
-server.listen(PORT, () => {
-  console.log(`===================================================`);
-  console.log(` Collaborative Canvas Server running on port ${PORT}`);
-  console.log(` http://localhost:${PORT}`);
-  console.log(`===================================================`);
-});
+if (require.main === module) {
+  server.listen(PORT, () => {
+    console.log(`===================================================`);
+    console.log(` Collaborative Canvas Server running on port ${PORT}`);
+    console.log(` http://localhost:${PORT}`);
+    console.log(`===================================================`);
+  });
+}
+
+module.exports = { app, server, io, roomManager };
