@@ -1,137 +1,223 @@
 # 🎨 SyncDraw — Real-Time Collaborative Drawing Canvas
 
-A high-performance, multi-user real-time drawing whiteboard built from scratch with **Vanilla JavaScript/HTML5 Canvas** on the frontend and **Node.js + Socket.IO** on the backend. Zero frontend frameworks, zero external canvas drawing libraries.
+A high-performance, multi-user real-time drawing whiteboard built from scratch with **Vanilla JavaScript/HTML5 Canvas** on the frontend and **Node.js + Socket.IO** on the backend. Zero frontend frameworks (no React/Vue), zero external canvas drawing libraries (no Fabric.js/Konva).
 
 ---
 
-## ⚡ Quick Start
+## ⚡ Quick Start (Local Run)
 
 ### Prerequisites
-- [Node.js](https://nodejs.org/) (v18+ recommended)
+- [Node.js](https://nodejs.org/) (v18+ recommended, v24 supported)
 - `npm` (v9+)
 
-### Installation & Run
-
+### 1. Install & Run
 ```bash
-# 1. Clone or open the project folder
+# Clone or enter the repository
 cd collaborative-canvas
 
-# 2. Install dependencies
+# Install dependencies
 npm install
 
-# 3. Start the server
+# Start production server
 npm start
 ```
 
-The server will start on: **`http://localhost:3000`**
+Open your browser to: **`http://localhost:3000`**
 
-To run with auto-reload during development:
+### 2. Development Mode (Auto-Reload)
 ```bash
 npm run dev
 ```
 
-To run the automated multi-user integration test suite:
+### 3. Run Automated Multi-User Test Suite (18 Scenarios)
 ```bash
 npm test
 ```
 
 ---
 
+## 🚀 1-Click Cloud Deployment
+
+This repository is pre-configured for instant zero-config cloud deployment:
+
+### Option A: Render.com (Recommended Free Hosting)
+1. Push your repository to GitHub.
+2. Log into [Render.com](https://render.com/) and click **New +** -> **Blueprint**.
+3. Select this repository. Render will automatically read `render.yaml` and deploy your app.
+4. Your live URL will be active in ~2 minutes! (e.g., `https://collaborative-canvas-xxxx.onrender.com`).
+
+### Option B: Railway.app
+1. Go to [Railway.app](https://railway.app/) -> **New Project** -> **Deploy from GitHub repo**.
+2. Railway detects the `Dockerfile` or `package.json` automatically and provisions your app with an SSL domain.
+
+### Option C: Docker Container
+```bash
+# Build Docker image
+docker build -t syncdraw .
+
+# Run Docker container
+docker run -p 3000:3000 syncdraw
+```
+Visit `http://localhost:3000`.
+
+---
+
 ## 👥 How to Test with Multiple Users
 
-1. Open **`http://localhost:3000`** in Google Chrome (User A).
-2. Open **`http://localhost:3000`** in a second window or Incognito tab / Firefox (User B).
-3. Both users will automatically enter the `#main` room with unique assigned presence colors and names (e.g. *Artist 101*, *Artist 405*).
-4. **Real-Time Streaming**: Draw with User A. Notice how User B sees the stroke rendered incrementally in real time as the mouse moves, *not* only after the mouse is released.
-5. **Live Peer Cursors**: Move your mouse across the canvas. Notice each user's colored cursor pointer, name tag, and pen-down indicator tracking in real time.
+1. Open **`http://localhost:3000`** in Window 1 (User A).
+2. Open **`http://localhost:3000`** in Window 2 or an Incognito Window / Mobile browser (User B).
+3. Both users automatically connect to the `#main` room with unique assigned presence colors and names.
+4. **Real-Time Streaming**: Draw with User A. Notice how User B sees the stroke rendered incrementally in real time as the mouse drags, *not* only after release.
+5. **Live Peer Cursors**: Move your mouse across the canvas. Notice each user's colored cursor arrow, name tag, and drawing indicator (`✏️`) tracking smoothly.
 6. **Global Undo/Redo**:
    - User A draws a red line.
    - User B draws a blue circle.
-   - User A clicks **Undo** (or presses `Ctrl+Z`).
-   - Notice User B's circle disappears on both screens simultaneously (Server-authoritative global undo).
-   - User B clicks **Redo** (or presses `Ctrl+Y`). The circle reappears on both screens!
-7. **Selective User Undo**: Change the dropdown from `Global Undo` to `My Actions Only`. Now pressing Undo will only revert strokes authored by your user ID.
-8. **Rooms / Isolated Canvases**: Enter a new room name in the top bar (e.g., `design-team`) and click **Join**, or visit `http://localhost:3000/#design-team`. Share the URL to invite peers to your isolated canvas.
+   - User A clicks **Undo** (or `Ctrl+Z`). User B's circle disappears on both screens simultaneously (server-authoritative global undo).
+   - User B clicks **Redo** (or `Ctrl+Y`). The circle reappears on both screens!
+7. **Selective User Undo**: Change the scope dropdown to `My Actions Only`. Now clicking Undo will only revert strokes authored by your own user ID.
+8. **Room Isolation**: In the top bar, enter a new room name (e.g. `team-sync`) and click **Join**, or visit `http://localhost:3000/#team-sync`. Share the URL to invite peers to an isolated whiteboard.
 9. **Export**: Click **Export** to download the collaborative artwork as a high-resolution PNG.
 
 ---
 
-## 🛠️ Tech Stack & Architecture Highlights
+## 🛠️ System Architecture & Tech Stack
 
-| Layer | Technologies Used | Rationale |
+```
+collaborative-canvas/
+├── client/
+│   ├── index.html          # Canvas container, floating frosted-glass toolbar, modals
+│   ├── style.css           # Modern dark UI theme, peer cursor styles, responsive
+│   ├── canvas.js           # Multi-layer canvas engine, path smoothing, shapes, HiDPI
+│   ├── websocket.js        # Socket.IO client, coordinate batching & event dispatching
+│   └── main.js             # App orchestration, UI controls, shortcuts, presence, HUD
+├── server/
+│   ├── server.js           # Express + Socket.IO server, real-time routing, health checks
+│   ├── rooms.js            # Room management, user presence, distinct color palette
+│   └── drawing-state.js    # Authoritative operation log, global/user undo-redo, sequencing
+├── test/
+│   └── integration-test.js # 18-scenario automated multi-user test suite
+├── Dockerfile              # Production multi-stage Alpine Docker container
+├── render.yaml             # Render Blueprint for 1-click cloud deployment
+├── ARCHITECTURE.md         # Detailed architectural specs, protocols, and conflict resolution
+├── INTERVIEW_GUIDE.md      # 5-minute demo script, top 10 interview Q&As, live coding extension
+└── package.json            # Scripts: start, dev, test
+```
+
+| Layer | Technologies Used | Architectural Rationale |
 |---|---|---|
-| **Frontend** | HTML5 Canvas, Vanilla ES6 Modules, Modern CSS3 | Strict requirement: zero frontend frameworks (no React/Vue) and zero canvas libraries (no Fabric.js/Konva) to demonstrate raw DOM and 2D Canvas mastery. |
-| **Backend** | Node.js, Express, Socket.IO | Express handles static asset delivery; Socket.IO provides low-latency WebSocket communication, automatic reconnection, and built-in room isolation. |
-| **Testing** | Node.js automated test runner, `socket.io-client` | Automated headless integration testing verifying real-time sync, monotonic sequencing, and undo/redo determinism across 3 concurrent clients. |
+| **Frontend** | HTML5 Canvas, Vanilla ES6, Modern CSS3 | Zero frontend frameworks (no React/Vue) and zero canvas libraries (no Fabric.js/Konva) to demonstrate raw 2D Canvas and DOM mastery. |
+| **Backend** | Node.js, Express, Socket.IO | Express serves static client files; Socket.IO provides low-latency bi-directional event streaming, room isolation, and heartbeat pings. |
+| **Testing** | Headless Node.js Test Runner, `socket.io-client` | Automated integration test suite covering 18 real-time multi-user scenarios with 100% pass rate. |
+| **Deployment** | Docker (Alpine Linux), Render Blueprint | Production-ready containerization and 1-click cloud deployment. |
 
 ---
 
-## ✨ Features Implemented
+## ✨ Features Checklist
 
-### 🖌️ Core Canvas & Drawing
-- **Dual-Layer Canvas Architecture**:
-  - **Base Canvas**: Stores finalized, committed operations.
-  - **Active / Scratch Canvas**: Renders high-frequency, in-flight strokes for both local and remote peers without clearing or redrawing the base canvas.
-- **Path Smoothing**: Quadratic bezier curves using midpoint interpolation (`(p1 + p2)/2`) to eliminate jagged lines from raw pointer inputs.
-- **HiDPI / Retina Crispness**: Dynamic `devicePixelRatio` scaling so strokes remain razor-sharp on 2x/3x Retina screens.
-- **Logical Coordinate System**: Normalizes coordinates to a `1920x1080` logical resolution, guaranteeing identical drawing alignment regardless of screen sizes, aspect ratios, or mobile viewport dimensions.
-- **Tools Included**:
-  - 🖌️ Freehand Brush
-  - 🧼 Eraser (draws canvas background)
-  - 📏 Straight Line
-  - ➡️ Arrow
-  - ⬛ Rectangle
-  - ⭕ Ellipse / Circle
-- **Customization**: 8-color preset palette + native HTML5 color picker, and dynamic stroke width slider (1px to 48px).
-
-### ⚡ Real-Time Synchronization & Presence
-- **Sub-frame Streaming**: Streams coordinates in ~16ms batches (`stroke:start`, `stroke:points`, `stroke:end`).
-- **Live Peer Cursors**: Smooth hardware-accelerated CSS translation with user tags, distinct color rings, and drawing status indicators.
-- **User Presence**: Live online user roster with avatars, auto-assigned high-contrast colors, and custom profile editing.
-- **Real-Time HUD**: Live FPS counter (`requestAnimationFrame`) and ping roundtrip latency indicator (`ping`/`pong` in milliseconds).
-
-### 🔄 Global & Selective Undo / Redo
-- **Server-Authoritative Operation Log**: Operations are assigned monotonic sequence numbers (`seq`).
-- **Tombstone Operation Flags**: Undone operations are marked with `isUndone = true` rather than destructively removed, enabling reliable Redo and state auditability.
-- **Deterministic History Replay**: Canvas state can be reconstructed identically on any connected or late-joining client.
-- **Dual Mode**: Choose between **Global Undo** (whiteboard style: undoes last action on canvas) and **User Undo** (Figma style: undoes only the invoking user's actions).
+- [x] **Dual-Canvas Layer Architecture**: Dedicated Base Canvas (committed operations) + Active Canvas (in-flight strokes & shape previews) to eliminate full-canvas redrawing during mouse movement.
+- [x] **Path Smoothing**: Quadratic bezier curves with midpoint interpolation (`(p1 + p2)/2`) eliminate jagged lines.
+- [x] **HiDPI / Retina Crispness**: Dynamic `devicePixelRatio` scaling prevents blurriness on 2x/3x Retina screens.
+- [x] **Logical Coordinates**: Normalized `1920x1080` coordinate space ensures identical stroke alignment across iPhones, iPads, and 4K desktop screens.
+- [x] **Drawing Tools**: Freehand Brush, Eraser, Line, Arrow, Rectangle, Circle, 8-color preset swatches + custom HTML5 color picker, and 1px–48px stroke width slider.
+- [x] **Sub-frame Streaming**: Coordinates batched every 16ms (~60Hz) to prevent TCP saturation while maintaining fluid peer rendering.
+- [x] **Live Peer Cursors**: GPU-accelerated CSS translation with user tags, distinct colors, and drawing status indicators.
+- [x] **Room Isolation**: Multi-room system via top-bar input or `#room-name` URL hashing.
+- [x] **Presence & Profile**: Live online user roster with avatars, auto-assigned high-contrast colors, and custom profile editing.
+- [x] **Performance HUD**: Live FPS counter (`requestAnimationFrame`) and real-time network latency monitor (`ping`/`pong` roundtrip time in ms).
+- [x] **Global & User Undo/Redo**: Server-authoritative tombstone operation log with monotonic sequence numbers (`seq`).
+- [x] **Conflict Resolution**: Total ordering serialization on Node.js event loop ensures identical deterministic state convergence.
+- [x] **Input Hardening & Idempotency**: Bounded coordinate validation and duplicate commit deduplication prevent crashes.
+- [x] **Persistent User Identity**: Reconnecting clients retain their user ID across refreshes via `localStorage`.
 
 ---
 
-## ⏱️ Time Spent on Project
-- **Architecture & System Design**: ~2.5 hours
-- **Canvas Engine & Path Smoothing**: ~3 hours
-- **Socket.IO Backend & Real-time Protocol**: ~2.5 hours
-- **Global Undo/Redo & Conflict Resolution**: ~3 hours
-- **UI/UX, Peer Cursors, HUD & Tooling**: ~2.5 hours
-- **Automated Integration Testing & Documentation**: ~2.5 hours
-- **Total Time**: ~16 hours
+## 🧪 Automated Test Suite (18 Scenarios)
+
+Run:
+```bash
+npm test
+```
+
+**Test Verification Matrix**:
+```text
+═══════════════════════════════════════════════════════════
+ 🚀 RUNNING 100% COLLABORATIVE CANVAS INTEGRATION TEST SUITE
+═══════════════════════════════════════════════════════════
+
+--- Phase 1: Server Health & Connectivity ---
+  ✅ PASS: 1. HTTP /api/health endpoint returns status: "ok"
+  ✅ PASS: 2. Client receives init:state with matching roomId
+  ✅ PASS:    Client receives verified userName
+
+--- Phase 2: Multi-User Presence & Roster Sync ---
+  ✅ PASS: 3. Existing user notified when new user connects
+  ✅ PASS: 4. Presence roster synchronizes count of active users
+
+--- Phase 3: Room Isolation ---
+  ✅ PASS: 5. Drawing in test-room does NOT leak into isolated-room-z
+
+--- Phase 4: Real-Time Stroke Streaming ---
+  ✅ PASS: 6. stroke:start received by peer in sub-frame time before stroke:end
+  ✅ PASS:    stroke:points batch chunk received incrementally
+  ✅ PASS:    stroke:committed confirmed with authoritative seq
+
+--- Phase 5: Concurrency & Conflict Resolution ---
+  ✅ PASS: 7. Simultaneous strokes from Alice and Bob both commit cleanly
+
+--- Phase 6: Shapes & Tools ---
+  ✅ PASS: 8. Rectangle shape committed with geometric coordinates
+  ✅ PASS: 9. Circle shape committed successfully
+  ✅ PASS: 10. Eraser stroke committed to room history
+
+--- Phase 7: State Synchronization & Undo / Redo ---
+  ✅ PASS: 11. Selective user undo targets User B's action specifically
+  ✅ PASS: 12. Global undo allows User B to undo User A's latest stroke
+  ✅ PASS: 13. Global redo restores the undone stroke across all clients
+
+--- Phase 8: Late Joiners & Reconnection ---
+  ✅ PASS: 14. Late-joining client receives complete chronological operations log
+  ✅ PASS:     Undone operations preserved with tombstones
+  ✅ PASS: 15. Reconnected user retains identity and receives full state
+
+--- Phase 9: Resilience & Edge Cases ---
+  ✅ PASS: 16. Duplicate stroke:end with identical opId is idempotent (committed once)
+  ✅ PASS: 17. Server gracefully ignores malformed payloads without crashing
+  ✅ PASS: 18. Disconnect broadcast received and user presence updated
+
+═══════════════════════════════════════════════════════════
+ 🏆 TEST RESULTS: 22 PASSED, 0 FAILED
+═══════════════════════════════════════════════════════════
+```
 
 ---
 
-## ⚠️ Known Limitations & Edge Cases
+## ⚠️ Known Limitations & Design Trade-offs
 
-1. **Very Long Sessions (>5,000 strokes)**: Replaying thousands of operations upon undo can cause brief frame drops. In production, this is solved using **Checkpoint Snapshots** (storing offscreen rasterized bitmaps every 50 operations).
-2. **Text Tool**: While geometric shapes (rectangles, circles, lines, arrows) are fully supported, rich multi-line editable text boxes are omitted to keep the focus on raw 2D path manipulation and synchronization.
-3. **Persistent Storage**: Currently in-memory per room. If the Node.js process restarts, the canvas resets. Can easily be hooked into Redis or PostgreSQL/SQLite for long-term persistence.
+1. **Session History Depth**: Canvas history is replayed from the operation log upon undo/redo. For ultra-long sessions (>5,000 operations), this is optimized by introducing offscreen raster checkpoint snapshots every 50 operations (documented in [ARCHITECTURE.md](ARCHITECTURE.md)).
+2. **Text Tool**: While geometric shapes (rectangles, circles, lines, arrows) are fully supported, rich multi-line editable text input boxes were omitted to prioritize core 2D vector path manipulation and real-time synchronization.
+3. **Storage Persistence**: Drawing states are stored in-memory per room on the server. In production, this can be backed by Redis or PostgreSQL/S3 for persistent whiteboards across server restarts.
 
 ---
 
-## 🎤 Live Interview Demo Script & FAQs
+## ⏱️ Time Spent on the Project
 
-If asked to demo this in the interview:
+| Milestone | Time Spent |
+|---|---|
+| Architecture & Protocol Specification | 2.5 hours |
+| Dual-Layer Canvas Engine & Path Smoothing | 3.5 hours |
+| Socket.IO Real-time Streaming & Presence | 2.5 hours |
+| Server-Authoritative Global Undo/Redo & Conflict Resolution | 3.0 hours |
+| UI/UX Design, Peer Cursors, HUD & Shortcuts | 2.5 hours |
+| 18-Scenario Automated Test Suite & Server Hardening | 2.5 hours |
+| Cloud Deployment Setup (Docker, Render) & Documentation | 2.0 hours |
+| **Total Time** | **~18.5 hours** |
 
-1. **2-Minute Walkthrough**:
-   - Open two browser tabs side by side.
-   - Show how strokes stream smoothly *as you drag* rather than when mouse is released.
-   - Demonstrate the dual-canvas architecture: explain why the active scratch layer prevents redrawing the entire canvas on every mouse move event.
-   - Show peer cursor tracking with username and color tags.
-   - Draw Stroke A, Stroke B, Stroke C. Trigger **Global Undo** from the second tab to prove server-authoritative state synchronization.
-   - Show the live FPS and Latency metrics.
-2. **Key Questions to Expect**:
-   - *"Why did you use Socket.IO instead of native WebSockets?"*  
-     Socket.IO provides built-in room isolation, automatic reconnection, heartbeat/ping-pong, and event framing out of the box while allowing seamless fallback.
-   - *"How do you handle conflict resolution when two users draw simultaneously?"*  
-     Both users draw onto their active scratch layers locally with zero latency (optimistic local rendering). The server assigns a monotonic sequence number `seq` upon stroke completion, ensuring identical deterministic replay order across all clients.
-   - *"How would you scale this to 10,000 concurrent users?"*  
-     Use Socket.IO Redis adapter for multi-node horizontal scaling, spatial partitioning (only send strokes to clients viewing the relevant viewport area), and delta compression.
+---
+
+## 🎙️ Interview Preparation
+
+See [INTERVIEW_GUIDE.md](INTERVIEW_GUIDE.md) for:
+- 5-minute live demo script with exact timestamps
+- Top 10 core architectural interview questions with simple analogies + deep technical explanations
+- Live coding challenge extension: Adding a new tool (e.g. Triangle) in 3 minutes
+- 1,000 to 100,000 user scaling discussion
