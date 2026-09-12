@@ -420,6 +420,11 @@ class CollaborativeApp {
       this.showToast('Disconnected. Reconnecting...', 3000);
     });
 
+    this.wsClient.on('connectError', () => {
+      const statusDot = document.getElementById('connection-status-dot');
+      if (statusDot) statusDot.className = 'status-dot disconnected';
+    });
+
     this.wsClient.on('connected', () => {
       const statusDot = document.getElementById('connection-status-dot');
       if (statusDot) statusDot.className = 'status-dot connected';
