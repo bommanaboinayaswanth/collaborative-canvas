@@ -3,9 +3,10 @@
  * 
  * WebSocket / Socket.IO Client Adapter.
  * Handles bidirectional real-time communication:
+ * - Persistent client userId across reconnects
  * - Connection lifecycle & reconnection
- * - Point batching / streaming with frame throttling
- * - Peer cursor synchronization
+ * - Point batching / streaming with frame throttling (~60Hz)
+ * - Peer cursor synchronization (~30Hz)
  * - Latency RTT measurement
  * - Event dispatching to application logic
  */
@@ -14,32 +15,47 @@ export class WebSocketClient {
   constructor() {
     this.socket = null;
     this.connected = false;
-    this.userId = null;
+    
+    // Persistent userId stored across page refreshes
+    let savedUserId = null;
+    try {
+      savedUserId = localStorage.getItem('cc_userid');
+      if (!savedUserId) {
+        savedUserId = `usr_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+        localStorage.setItem('cc_userid', savedUserId);
+      }
+    } catch (e) {
+      savedUserId = `usr_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+    }
+    this.userId = savedUserId;
+
     this.userName = null;
     this.userColor = null;
     this.roomId = 'main';
 
-    // Point stream batching buffer
+    // Point stream batching buffer (~60 Hz)
     this.pointsBuffer = [];
     this.bufferOpId = null;
     this.flushTimeout = null;
-    this.BATCH_INTERVAL_MS = 16; // ~60 Hz batch rate
+    this.BATCH_INTERVAL_MS = 16;
 
-    // Cursor throttling
+    // Cursor throttling (~30 Hz)
     this.lastCursorEmit = 0;
-    this.CURSOR_THROTTLE_MS = 35; // ~30 Hz cursor update rate
+    this.CURSOR_THROTTLE_MS = 35;
 
     // Latency measurement
     this.latencyMs = 0;
     this.pingTimer = null;
 
-    // Listeners
+    // Listeners map
     this.listeners = new Map();
+
+    // Flush on page unload
+    window.addEventListener('beforeunload', () => {
+      this.flushPointsBuffer();
+    });
   }
 
-  /**
-   * Register event listener.
-   */
   on(event, callback) {
     if (!this.listeners.has(event)) {
       this.listeners.set(event, []);
@@ -47,35 +63,41 @@ export class WebSocketClient {
     this.listeners.get(event).push(callback);
   }
 
-  /**
-   * Emit internal application event.
-   */
   emitEvent(event, data) {
     const list = this.listeners.get(event);
     if (list) {
-      list.forEach(cb => cb(data));
+      list.forEach(cb => {
+        try {
+          cb(data);
+        } catch (err) {
+          console.error(`[WebSocket] Error in ${event} callback:`, err);
+        }
+      });
     }
   }
 
-  /**
-   * Connect to Socket.IO server.
-   */
   connect(options = {}) {
-    // Uses global `io` loaded via /socket.io/socket.io.js
     if (typeof io === 'undefined') {
-      console.error('[WebSocket] Socket.io client library not found.');
+      console.error('[WebSocket] Socket.io client library not loaded.');
       return;
     }
 
     this.socket = io({
       transports: ['websocket', 'polling'],
-      reconnectionAttempts: 10,
-      reconnectionDelay: 1000
+      reconnectionAttempts: 15,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000
     });
 
     this.roomId = options.roomId || 'main';
-    this.userName = options.userName || localStorage.getItem('cc_username') || `Artist ${Math.floor(100 + Math.random() * 900)}`;
-    this.userColor = options.userColor || localStorage.getItem('cc_usercolor') || null;
+    
+    try {
+      this.userName = options.userName || localStorage.getItem('cc_username') || `Artist ${Math.floor(100 + Math.random() * 900)}`;
+      this.userColor = options.userColor || localStorage.getItem('cc_usercolor') || null;
+    } catch (e) {
+      this.userName = `Artist ${Math.floor(100 + Math.random() * 900)}`;
+      this.userColor = null;
+    }
 
     this.setupSocketEvents();
   }
@@ -83,17 +105,17 @@ export class WebSocketClient {
   setupSocketEvents() {
     this.socket.on('connect', () => {
       this.connected = true;
-      console.log(`[WebSocket] Connected with socket ID: ${this.socket.id}`);
+      console.log(`[WebSocket] Connected: ${this.socket.id}`);
       this.emitEvent('connected', { socketId: this.socket.id });
 
-      // Join room
+      // Join room with persistent userId
       this.socket.emit('room:join', {
         roomId: this.roomId,
         userName: this.userName,
-        userColor: this.userColor
+        userColor: this.userColor,
+        userId: this.userId
       });
 
-      // Start latency ping loop
       this.startLatencyPing();
     });
 
@@ -104,30 +126,41 @@ export class WebSocketClient {
       this.stopLatencyPing();
     });
 
-    // Room state initialization
+    this.socket.on('connect_error', (err) => {
+      this.emitEvent('connectError', err);
+    });
+
+    // Room state initialization & snapshots
     this.socket.on('init:state', (data) => {
-      this.userId = data.user.userId;
-      this.userName = data.user.userName;
-      this.userColor = data.user.userColor;
+      if (data && data.user) {
+        this.userId = data.user.userId;
+        this.userName = data.user.userName;
+        this.userColor = data.user.userColor;
+        try {
+          localStorage.setItem('cc_userid', this.userId);
+          localStorage.setItem('cc_username', this.userName);
+          localStorage.setItem('cc_usercolor', this.userColor);
+        } catch (e) {}
+      }
       this.emitEvent('initState', data);
     });
 
-    // Stroke events
+    // Real-time strokes
     this.socket.on('stroke:start', (data) => this.emitEvent('remoteStrokeStart', data));
     this.socket.on('stroke:points', (data) => this.emitEvent('remoteStrokePoints', data));
     this.socket.on('stroke:committed', (data) => this.emitEvent('strokeCommitted', data));
     this.socket.on('stroke:cancel', (data) => this.emitEvent('remoteStrokeCancel', data));
 
-    // Cursor events
+    // Peer cursors
     this.socket.on('cursor:update', (data) => this.emitEvent('cursorUpdate', data));
     this.socket.on('cursor:leave', (data) => this.emitEvent('cursorLeave', data));
 
-    // History & Canvas events
+    // History & Canvas
     this.socket.on('history:undone', (data) => this.emitEvent('historyUndone', data));
     this.socket.on('history:redone', (data) => this.emitEvent('historyRedone', data));
     this.socket.on('canvas:cleared', (data) => this.emitEvent('canvasCleared', data));
 
-    // User Presence events
+    // User presence
     this.socket.on('user:joined', (data) => this.emitEvent('userJoined', data));
     this.socket.on('user:left', (data) => this.emitEvent('userLeft', data));
     this.socket.on('room:users', (data) => this.emitEvent('usersUpdated', data));
@@ -135,14 +168,11 @@ export class WebSocketClient {
     // Latency pong
     this.socket.on('latency:pong', (data) => {
       const now = Date.now();
-      this.latencyMs = Math.max(1, now - data.clientTime);
+      this.latencyMs = Math.max(1, now - (data ? data.clientTime : now));
       this.emitEvent('latencyUpdate', { latencyMs: this.latencyMs });
     });
   }
 
-  /**
-   * Start 3-second ping interval for network latency monitor.
-   */
   startLatencyPing() {
     this.stopLatencyPing();
     this.pingTimer = setInterval(() => {
@@ -159,21 +189,15 @@ export class WebSocketClient {
     }
   }
 
-  /**
-   * Send stroke start immediately.
-   */
   sendStrokeStart(strokeData) {
-    if (!this.connected) return;
+    if (!this.connected || !strokeData) return;
     this.bufferOpId = strokeData.opId;
     this.pointsBuffer = [];
     this.socket.emit('stroke:start', strokeData);
   }
 
-  /**
-   * Buffer and throttle point streaming (~60Hz).
-   */
   sendStrokePoint(opId, point) {
-    if (!this.connected) return;
+    if (!this.connected || !point) return;
 
     if (this.bufferOpId !== opId) {
       this.flushPointsBuffer();
@@ -189,16 +213,13 @@ export class WebSocketClient {
     }
   }
 
-  /**
-   * Flush pending points buffer.
-   */
   flushPointsBuffer() {
     if (this.flushTimeout) {
       clearTimeout(this.flushTimeout);
       this.flushTimeout = null;
     }
 
-    if (this.pointsBuffer.length > 0 && this.bufferOpId) {
+    if (this.pointsBuffer.length > 0 && this.bufferOpId && this.connected) {
       this.socket.emit('stroke:points', {
         opId: this.bufferOpId,
         points: this.pointsBuffer
@@ -207,29 +228,20 @@ export class WebSocketClient {
     }
   }
 
-  /**
-   * Finalize and commit stroke operation.
-   */
   sendStrokeEnd(strokeOperation) {
-    if (!this.connected) return;
+    if (!this.connected || !strokeOperation) return;
     this.flushPointsBuffer();
     this.socket.emit('stroke:end', strokeOperation);
   }
 
-  /**
-   * Cancel in-flight stroke.
-   */
   sendStrokeCancel(opId) {
     if (!this.connected) return;
     this.flushPointsBuffer();
     this.socket.emit('stroke:cancel', { opId });
   }
 
-  /**
-   * Send peer cursor coordinates with throttle (~30Hz).
-   */
   sendCursorMove(cursorData) {
-    if (!this.connected) return;
+    if (!this.connected || !cursorData) return;
     const now = performance.now();
     if (now - this.lastCursorEmit < this.CURSOR_THROTTLE_MS) return;
 
@@ -242,47 +254,34 @@ export class WebSocketClient {
     this.socket.emit('cursor:leave');
   }
 
-  /**
-   * Request Undo.
-   */
   sendUndo(mode = 'global') {
     if (!this.connected) return;
     this.socket.emit('history:undo', { mode });
   }
 
-  /**
-   * Request Redo.
-   */
   sendRedo(mode = 'global') {
     if (!this.connected) return;
     this.socket.emit('history:redo', { mode });
   }
 
-  /**
-   * Request Clear Canvas.
-   */
   sendClearCanvas() {
     if (!this.connected) return;
     this.socket.emit('canvas:clear');
   }
 
-  /**
-   * Update Profile (Username or Color).
-   */
   updateProfile(userName, userColor) {
     this.userName = userName;
     this.userColor = userColor;
-    localStorage.setItem('cc_username', userName);
-    localStorage.setItem('cc_usercolor', userColor);
+    try {
+      localStorage.setItem('cc_username', userName);
+      localStorage.setItem('cc_usercolor', userColor);
+    } catch (e) {}
 
     if (this.connected) {
       this.socket.emit('user:updateProfile', { userName, userColor });
     }
   }
 
-  /**
-   * Change Room.
-   */
   switchRoom(newRoomId) {
     if (!newRoomId || newRoomId === this.roomId) return;
     this.roomId = newRoomId.trim().toLowerCase();
@@ -291,7 +290,8 @@ export class WebSocketClient {
       this.socket.emit('room:join', {
         roomId: this.roomId,
         userName: this.userName,
-        userColor: this.userColor
+        userColor: this.userColor,
+        userId: this.userId
       });
     }
   }

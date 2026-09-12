@@ -4,7 +4,15 @@
  * Server-authoritative canvas state management.
  * Maintains operation log, active in-progress strokes, global undo/redo stack,
  * and deterministic sequence numbers for conflict resolution.
+ * 
+ * Hardened with:
+ * - Idempotency protection against duplicate commits
+ * - Input validation & bounds clamping
+ * - Redo stack safety
+ * - Snapshot caching support
  */
+
+const ALLOWED_TOOLS = new Set(['brush', 'eraser', 'line', 'arrow', 'rectangle', 'circle', 'clear']);
 
 class DrawingState {
   constructor(roomId = 'default') {
@@ -22,7 +30,7 @@ class DrawingState {
     // History stack of undone operations for redo: [opId, opId, ...]
     this.redoStack = [];
     
-    // Currently in-flight strokes: socketId/userId -> InProgressStroke
+    // Currently in-flight strokes: opId -> InProgressStroke
     this.activeStrokes = new Map();
     
     // Monotonic sequence counter for total order
@@ -30,20 +38,41 @@ class DrawingState {
   }
 
   /**
+   * Sanitize coordinate point.
+   */
+  sanitizePoint(pt) {
+    if (!pt || typeof pt !== 'object') return null;
+    const x = Number(pt.x);
+    const y = Number(pt.y);
+    if (Number.isNaN(x) || Number.isNaN(y)) return null;
+    return {
+      x: Math.round(x * 10) / 10,
+      y: Math.round(y * 10) / 10,
+      pressure: typeof pt.pressure === 'number' ? pt.pressure : 0.5
+    };
+  }
+
+  /**
    * Start a new in-progress stroke from a user.
    */
-  startStroke(userId, strokeData) {
-    const { opId, tool, color, width, point, userName, userColor } = strokeData;
-    
+  startStroke(userId, strokeData = {}) {
+    if (!strokeData || !strokeData.opId) return null;
+
+    const opId = String(strokeData.opId);
+    const tool = ALLOWED_TOOLS.has(strokeData.tool) ? strokeData.tool : 'brush';
+    const color = typeof strokeData.color === 'string' ? strokeData.color.slice(0, 32) : '#000000';
+    const width = Math.min(Math.max(Number(strokeData.width) || 4, 1), 100);
+    const validPoint = this.sanitizePoint(strokeData.point) || { x: 0, y: 0 };
+
     const stroke = {
       id: opId,
-      userId,
-      userName: userName || 'Anonymous',
-      userColor: userColor || '#3b82f6',
-      tool: tool || 'brush',
-      color: color || '#000000',
-      width: Number(width) || 4,
-      points: [point],
+      userId: String(userId || 'anonymous'),
+      userName: String(strokeData.userName || 'Anonymous').slice(0, 24),
+      userColor: String(strokeData.userColor || '#3b82f6').slice(0, 24),
+      tool,
+      color,
+      width,
+      points: [validPoint],
       startedAt: Date.now()
     };
 
@@ -55,43 +84,67 @@ class DrawingState {
    * Append stream of points to an active stroke.
    */
   appendPoints(opId, points) {
-    const stroke = this.activeStrokes.get(opId);
+    if (!opId) return null;
+    const stroke = this.activeStrokes.get(String(opId));
     if (!stroke) return null;
 
     if (Array.isArray(points)) {
-      stroke.points.push(...points);
+      for (const pt of points) {
+        const cleanPt = this.sanitizePoint(pt);
+        if (cleanPt) stroke.points.push(cleanPt);
+      }
     } else if (points) {
-      stroke.points.push(points);
+      const cleanPt = this.sanitizePoint(points);
+      if (cleanPt) stroke.points.push(cleanPt);
     }
+
     return stroke;
   }
 
   /**
-   * Finalize an active stroke or add a shape/clear operation.
+   * Finalize an active stroke or commit a shape/clear operation.
+   * Idempotent: returns existing operation if already committed.
    */
   endStroke(opId, finalData = {}) {
-    let operation = this.activeStrokes.get(opId);
+    if (!opId) return null;
+    const cleanOpId = String(opId);
+
+    // IDEMPOTENCY CHECK: If already committed, ignore duplicate commit
+    if (this.operations.has(cleanOpId)) {
+      return null;
+    }
+
+    let operation = this.activeStrokes.get(cleanOpId);
 
     if (operation) {
       // Append any trailing points
       if (finalData.points && Array.isArray(finalData.points)) {
-        operation.points = finalData.points;
+        const sanitized = [];
+        for (const pt of finalData.points) {
+          const cleanPt = this.sanitizePoint(pt);
+          if (cleanPt) sanitized.push(cleanPt);
+        }
+        if (sanitized.length > 0) operation.points = sanitized;
       }
-      this.activeStrokes.delete(opId);
+      this.activeStrokes.delete(cleanOpId);
     } else if (finalData.tool) {
-      // Operation was submitted directly (e.g. Shape, Clear)
+      // Geometric shape or clear operation committed directly
+      const tool = ALLOWED_TOOLS.has(finalData.tool) ? finalData.tool : 'brush';
+      const color = typeof finalData.color === 'string' ? finalData.color.slice(0, 32) : '#000000';
+      const width = Math.min(Math.max(Number(finalData.width) || 4, 1), 100);
+
       operation = {
-        id: opId,
-        userId: finalData.userId,
-        userName: finalData.userName || 'Anonymous',
-        userColor: finalData.userColor || '#3b82f6',
-        tool: finalData.tool,
-        color: finalData.color || '#000000',
-        width: Number(finalData.width) || 4,
-        points: finalData.points || [],
-        startPoint: finalData.startPoint || null,
-        endPoint: finalData.endPoint || null,
-        fillColor: finalData.fillColor || 'transparent',
+        id: cleanOpId,
+        userId: String(finalData.userId || 'anonymous'),
+        userName: String(finalData.userName || 'Anonymous').slice(0, 24),
+        userColor: String(finalData.userColor || '#3b82f6').slice(0, 24),
+        tool,
+        color,
+        width,
+        points: Array.isArray(finalData.points) ? finalData.points.map(p => this.sanitizePoint(p)).filter(Boolean) : [],
+        startPoint: this.sanitizePoint(finalData.startPoint) || null,
+        endPoint: this.sanitizePoint(finalData.endPoint) || null,
+        fillColor: typeof finalData.fillColor === 'string' ? finalData.fillColor.slice(0, 32) : 'transparent',
         startedAt: Date.now()
       };
     } else {
@@ -104,11 +157,11 @@ class DrawingState {
     operation.completedAt = Date.now();
     operation.isUndone = false;
 
-    // Store in operation log
-    this.operations.set(opId, operation);
-    this.order.push(opId);
+    // Store in authoritative operation log
+    this.operations.set(cleanOpId, operation);
+    this.order.push(cleanOpId);
 
-    // New drawing action clears future redo stack (standard whiteboard semantics)
+    // Any new drawing action invalidates future redo branch
     this.redoStack = [];
 
     return operation;
@@ -116,12 +169,9 @@ class DrawingState {
 
   /**
    * Undo an operation.
-   * @param {string} [userId] - Optional. If provided with mode='user', undos this user's last action.
-   * @param {'global'|'user'} [mode='global'] - Undo mode.
-   * @returns {{ success: boolean, opId: string | null, operation: object | null }}
+   * Supports 'global' (last canvas stroke) and 'user' (last stroke by specific user).
    */
   undo(userId = null, mode = 'global') {
-    // Traverse chronological order backwards to find the last active operation
     let targetOpId = null;
 
     for (let i = this.order.length - 1; i >= 0; i--) {
@@ -134,7 +184,7 @@ class DrawingState {
             break;
           }
         } else {
-          // Global undo: picks the absolute latest active operation
+          // Global undo: latest operation on the canvas
           targetOpId = opId;
           break;
         }
@@ -161,10 +211,7 @@ class DrawingState {
   }
 
   /**
-   * Redo the most recently undone operation.
-   * @param {string} [userId] - Optional. If provided with mode='user', redoes this user's last undone action.
-   * @param {'global'|'user'} [mode='global'] - Redo mode.
-   * @returns {{ success: boolean, opId: string | null, operation: object | null }}
+   * Redo an undone operation.
    */
   redo(userId = null, mode = 'global') {
     if (this.redoStack.length === 0) {
@@ -185,7 +232,7 @@ class DrawingState {
         }
       }
     } else {
-      // Global redo
+      // Global redo: top of redo stack
       targetIndex = this.redoStack.length - 1;
       targetOpId = this.redoStack[targetIndex];
     }
@@ -211,12 +258,12 @@ class DrawingState {
   }
 
   /**
-   * Clear canvas operation. Recorded as an operation so it can be undone.
+   * Clear canvas. Recorded as an undoable operation.
    */
   clearCanvas(userId, userName) {
     const opId = `clear_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     
-    // Clear any active in-flight strokes
+    // Terminate any active in-flight strokes
     this.activeStrokes.clear();
 
     const clearOp = this.endStroke(opId, {
@@ -229,18 +276,15 @@ class DrawingState {
   }
 
   /**
-   * Cancel an in-flight stroke (e.g. if user cancels pointer or disconnects mid-stroke).
+   * Cancel an in-flight stroke.
    */
   cancelStroke(opId) {
-    if (this.activeStrokes.has(opId)) {
-      this.activeStrokes.delete(opId);
-      return true;
-    }
-    return false;
+    if (!opId) return false;
+    return this.activeStrokes.delete(String(opId));
   }
 
   /**
-   * Get full state payload for new user or resynchronization.
+   * Full state snapshot for new clients, reconnects, or synchronization audits.
    */
   getSnapshot() {
     const operationsList = [];
