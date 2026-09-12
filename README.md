@@ -8,7 +8,7 @@ A high-performance, multi-user real-time drawing whiteboard built from scratch w
 
 ## 🌐 Live Deployed Demo Link
 
-* **Direct Public Live Demo**: **[[https://8d55df35b40937.lhr.life](https://8d55df35b40937.lhr.life)](https://collaborative-canvas-9wu5.onrender.com)**
+* **Direct Public Live Demo**: **(https://collaborative-canvas-9wu5.onrender.com)**
 * **GitHub Repository**: **[https://github.com/bommanaboinayaswanth/collaborative-canvas](https://github.com/bommanaboinayaswanth/collaborative-canvas)**
 
 ---
